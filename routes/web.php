@@ -8,25 +8,25 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes
+| Web Routes - FINAL VERSION (Optimized for QR Scanner)
 |--------------------------------------------------------------------------
 */
 
-// 1. The Main Scanner Interface
+// 1. The Main Scanner Homepage
 Route::get('/', function () {
     return view('welcome');
 });
 
-// 2. The Verification Logic (Called by the Scanner)
+// 2. Verification API (Processes scans from the phone camera)
 Route::post('/check-in', function (Request $request) {
-    $qrData = $request->qr_code; // Format expected: "Name|SecurityCode"
+    $qrData = $request->qr_code; // Expected: "Name|SecurityCode"
     
     if (str_contains($qrData, '|')) {
         $parts = explode('|', $qrData);
-        $name = $parts[0];
-        $code = $parts[1];
+        $name = trim($parts[0]);
+        $code = trim($parts[1]);
 
-        // Search database for the security code
+        // Find student by code
         $member = Member::where('security_code', $code)->first();
 
         if ($member) {
@@ -44,45 +44,51 @@ Route::post('/check-in', function (Request $request) {
     ], 404);
 });
 
-// 3. The Secure Import Route (Optimized for Large Data)
+// 3. Optimized Excel Import (Prevents Timeouts and Ghost Rows)
 Route::get('/update-database-secure-path', function () {
-    // Increase memory and time limits just for this route
+    // Increase resources for processing large Excel files
     ini_set('memory_limit', '512M');
     ini_set('max_execution_time', 300);
 
     $path = storage_path('app/DATA_SECURE.xlsx');
 
     if (!file_exists($path)) {
-        return "Error: DATA_SECURE.xlsx not found in storage/app/. Did you push it to GitHub?";
+        return "Error: DATA_SECURE.xlsx not found in storage/app/.";
     }
 
     try {
-        // Load the Excel data into an array
+        // Load Excel to Array
         $rows = Excel::toArray([], $path)[0];
-        
-        // Remove the header row
-        $students = array_slice($rows, 1);
+        $students = array_slice($rows, 1); // Remove header
 
-        // Use a Database Transaction to prevent 504 Timeouts
+        // Start Transaction for Speed (TKJ Optimization)
         DB::beginTransaction();
-
+        
+        $count = 0;
         foreach ($students as $row) {
-            if (isset($row[0], $row[2])) {
+            // Clean and Validate data
+            $name  = isset($row[0]) ? trim((string)$row[0]) : '';
+            $class = isset($row[1]) ? trim((string)$row[1]) : '';
+            $code  = isset($row[2]) ? trim((string)$row[2]) : '';
+
+            // Only import if Name and Code exist (Ignores empty rows)
+            if (!empty($name) && !empty($code)) {
                 Member::updateOrCreate(
-                    ['security_code' => (string)$row[2]], // Unique identifier
+                    ['security_code' => $code], // Search key
                     [
-                        'name' => (string)$row[0],
-                        'class' => (string)$row[1]
+                        'name' => $name,
+                        'class' => $class
                     ]
                 );
+                $count++;
             }
         }
 
         DB::commit();
-        return "Database Updated Successfully! Total Students Processed: " . count($students);
+        return "Database Updated Successfully! Cleaned and Imported $count students.";
 
     } catch (\Exception $e) {
         DB::rollBack();
-        return "Critical Error: " . $e->getMessage();
+        return "Critical Error during Import: " . $e->getMessage();
     }
 });
