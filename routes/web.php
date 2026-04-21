@@ -5,21 +5,12 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Member;
 use Illuminate\Http\Request;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-*/
-
 // 1. Homepage
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', function () { return view('welcome'); });
 
-// 2. Scan Verification API
+// 2. Scan Verification (With Double-Scan Protection)
 Route::post('/check-in', function (Request $request) {
     $qrData = $request->qr_code;
-    
     if (str_contains($qrData, '|')) {
         $parts = explode('|', $qrData);
         $name = trim($parts[0]);
@@ -28,6 +19,17 @@ Route::post('/check-in', function (Request $request) {
         $member = Member::where('security_code', $code)->first();
 
         if ($member) {
+            // Block if already scanned
+            if ($member->is_checked_in) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "ALREADY SCANNED: {$member->name} has already checked in."
+                ], 403);
+            }
+
+            // Mark as scanned
+            $member->update(['is_checked_in' => true]);
+
             return response()->json([
                 'status' => 'success',
                 'message' => "VERIFIED: {$member->name} ({$member->class})",
@@ -35,51 +37,47 @@ Route::post('/check-in', function (Request $request) {
             ]);
         }
     }
-
-    return response()->json([
-        'status' => 'error',
-        'message' => 'Identity Not Found'
-    ], 404);
+    return response()->json(['status' => 'error', 'message' => 'Identity Not Found'], 404);
 });
 
-// 3. Optimized CSV Import (Uses low memory)
+// 3. Super-Fast CSV Import
 Route::get('/update-database-secure-path', function () {
     $path = storage_path('app/DATA_SECURE.csv');
-
-    if (!file_exists($path)) {
-        return "Error: DATA_SECURE.csv not found in storage/app/.";
-    }
+    if (!file_exists($path)) return "Error: DATA_SECURE.csv not found.";
 
     try {
         $file = fopen($path, 'r');
-        fgetcsv($file); // Skip header row
+        fgetcsv($file); // Skip header
 
         DB::beginTransaction();
-        
         $count = 0;
         while (($row = fgetcsv($file)) !== FALSE) {
-            // CSV columns: 0=Name, 1=Class, 2=Code
-            $name  = isset($row[0]) ? trim($row[0]) : '';
-            $class = isset($row[1]) ? trim($row[1]) : '';
-            $code  = isset($row[2]) ? trim($row[2]) : '';
-
-            if (!empty($name) && !empty($code)) {
-                Member::updateOrCreate(
-                    ['security_code' => $code],
-                    ['name' => $name, 'class' => $class]
+            if (!empty($row[0]) && !empty($row[2])) {
+                // Use updateOrInsert for raw speed
+                DB::table('members')->updateOrInsert(
+                    ['security_code' => trim($row[2])],
+                    [
+                        'name' => trim($row[0]),
+                        'class' => trim($row[1]),
+                        'is_checked_in' => false, // New students start as 0
+                        'updated_at' => now(),
+                        'created_at' => now()
+                    ]
                 );
                 $count++;
             }
         }
-        
         fclose($file);
         DB::commit();
-        
-        return "Database Updated! Successfully processed $count students from CSV.";
-
+        return "Import Success! Processed $count students. Go to / to start scanning.";
     } catch (\Exception $e) {
-        if(isset($file)) fclose($file);
         DB::rollBack();
-        return "Critical Error: " . $e->getMessage();
+        return "Error: " . $e->getMessage();
     }
+});
+
+// 4. Secret Reset Link
+Route::get('/reset-all-attendance', function() {
+    Member::where('is_checked_in', true)->update(['is_checked_in' => false]);
+    return "All student statuses have been reset to 'Not Checked In'.";
 });
