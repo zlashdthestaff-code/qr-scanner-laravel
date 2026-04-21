@@ -16,6 +16,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('class');
             $table->string('security_code')->unique();
+            // --- ADD THIS LINE ---
+            $table->boolean('is_checked_in')->default(false); 
+            // ---------------------
             $table->timestamps();
         });
     }
