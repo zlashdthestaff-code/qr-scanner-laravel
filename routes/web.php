@@ -8,9 +8,10 @@ use Illuminate\Http\Request;
 // 1. Homepage
 Route::get('/', function () { return view('welcome'); });
 
-// 2. Scan Verification (With Double-Scan Protection)
-Route::post('/check-in', function (Request $request) {
+// 2. Scan Verification (Changed to /verify to match your logs)
+Route::post('/verify', function (Request $request) {
     $qrData = $request->qr_code;
+    
     if (str_contains($qrData, '|')) {
         $parts = explode('|', $qrData);
         $name = trim($parts[0]);
@@ -47,19 +48,18 @@ Route::get('/update-database-secure-path', function () {
 
     try {
         $file = fopen($path, 'r');
-        fgetcsv($file); // Skip header
+        fgetcsv($file); // Skip header row
 
         DB::beginTransaction();
         $count = 0;
         while (($row = fgetcsv($file)) !== FALSE) {
             if (!empty($row[0]) && !empty($row[2])) {
-                // Use updateOrInsert for raw speed
                 DB::table('members')->updateOrInsert(
                     ['security_code' => trim($row[2])],
                     [
                         'name' => trim($row[0]),
                         'class' => trim($row[1]),
-                        'is_checked_in' => false, // New students start as 0
+                        'is_checked_in' => false,
                         'updated_at' => now(),
                         'created_at' => now()
                     ]
@@ -71,6 +71,7 @@ Route::get('/update-database-secure-path', function () {
         DB::commit();
         return "Import Success! Processed $count students. Go to / to start scanning.";
     } catch (\Exception $e) {
+        if(isset($file)) fclose($file);
         DB::rollBack();
         return "Error: " . $e->getMessage();
     }
