@@ -1,25 +1,37 @@
-*.log
-.DS_Store
+# --- Standard Laravel Ignores ---
 .env
 .env.backup
 .env.production
 .phpactor.json
 .phpunit.result.cache
+.DS_Store
+Thumbs.db
+*.log
+
+# --- Folders to Ignore ---
+/node_modules
+/vendor
 /.cursor/
 /.idea
-/.nova
-/.phpunit.cache
 /.vscode
-/.zed
-/auth.json
-/node_modules
-/public/build
-/public/hot
-/public/storage
+/.phpunit.cache
+
+# --- Storage Folder Management ---
 /storage/*.key
 /storage/pail
-/vendor
+/public/storage
+
+# --- IMPORTANT: YOUR QR DATA FILE ---
+# We want to ignore general storage clutter, but we MUST keep your data file.
+# By adding the '!' symbol, we tell Git: "Do NOT ignore this specific file."
+!storage/app/DATA_SECURE.xlsx
+
+# If you prefer using a CSV for the import, add this too:
+!storage/app/DATA_SECURE.csv
+
+# --- Other Build Files ---
+/public/build
+/public/hot
 _ide_helper.php
 Homestead.json
 Homestead.yaml
-Thumbs.db
